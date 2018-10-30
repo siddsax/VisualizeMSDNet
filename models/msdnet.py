@@ -3,6 +3,7 @@ from __future__ import unicode_literals
 from __future__ import print_function
 from __future__ import division
 
+import torch
 import torch.nn as nn
 from models.msdnet_layers import MSDLayer,\
     MSDFirstLayer,CifarClassifier,Transition
@@ -57,7 +58,10 @@ class MSDNet(nn.Module):
         self.cur_layer = 1
         self.cur_transition_layer = 1
         self.subnets = nn.ModuleList(self.build_modules(self.num_channels))
+        # import pdb
+        # pdb.set_trace()
 
+        # self.features = self.subnets
         # initialize
         for m in self.subnets:
             self.init_weights(m)
@@ -197,7 +201,7 @@ class MSDNet(nn.Module):
         print('| Layer {:0>2d} input scales {} output scales {} |'.
               format(self.cur_layer, in_scales, out_scales))
 
-    def forward(self, x, progress=None):
+    def forward(self, x, progress=None, p=0):
         """
         Propagate Input image in all blocks of MSD layers and classifiers
         and return a list of classifications
@@ -207,6 +211,8 @@ class MSDNet(nn.Module):
         """
 
         outputs = [None] * self.num_blocks
+        feats = [None] * self.num_blocks
+        probab = [None] * self.num_blocks
         cur_input = x
         for block_num in range(0, self.num_blocks):
 
@@ -223,10 +229,18 @@ class MSDNet(nn.Module):
                 for s, b in enumerate(block_output):
                     print("- Output size of this block's scale {}: ".format(s),
                           b.size())
-            class_output = \
-                self.subnets[block_num+self.num_blocks](block_output[-1])
+            class_output = self.subnets[block_num+self.num_blocks](block_output[-1])
+            feat = self.subnets[block_num+self.num_blocks].penFeat(block_output[-1])
             outputs[block_num] = class_output
-
-        return outputs
-
+            probab[block_num] = torch.nn.functional.softmax(class_output, dim=-1)
+            feats[block_num] = feat
+            # import pdb
+            # pdb.set_trace()
+        # return outputs
+        if p==0:
+            return outputs
+        if p==1:
+            return outputs, feats
+        else:
+            return outputs, probab
 

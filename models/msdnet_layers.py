@@ -444,6 +444,19 @@ class CifarClassifier(nn.Module):
         x = self.classifier(x)
         return x
 
+    def penFeat(self, x):
+        """
+        Drive features to classification.
+
+        :param x: Input of the lowest scale of the last layer of
+                  the last block
+        :return: Cifar object classification result
+        """
+
+        x = self.features(x)
+        x = x.view(x.size(0), self.inner_channels)
+        # x = self.classifier(x)
+        return x
 
 class GCN(nn.Module):
 

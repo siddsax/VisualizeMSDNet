@@ -1,3 +1,5 @@
+*.png
+*.jpg
 anytime_cifar10
 anytime_cifar_10.pth.tar
 *.pyc
