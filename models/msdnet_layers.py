@@ -249,8 +249,13 @@ class MSDLayer(nn.Module):
                                   last_same_scale])
 
         # Flow inputs in subnets and fill outputs
+        k = 0
         for scale in range(0, self.out_scales):
+            k += 1
             outputs.append(self.subnets[scale](cur_input[scale]))
+            # print(k)
+            # import pdb
+            # pdb.set_trace()
 
         return outputs
 
@@ -440,8 +445,10 @@ class CifarClassifier(nn.Module):
         """
 
         x = self.features(x)
-        x = x.view(x.size(0), self.inner_channels)
-        x = self.classifier(x)
+        y = x.view(x.size(0), self.inner_channels)
+        x = self.classifier(y)
+        # import pdb
+        # pdb.set_trace()
         return x
 
     def penFeat(self, x):

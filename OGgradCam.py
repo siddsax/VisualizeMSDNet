@@ -1,5 +1,5 @@
+
 import torch
-import pdb
 from torch.autograd import Variable
 from torch.autograd import Function
 from torchvision import models
@@ -8,6 +8,45 @@ import cv2
 import sys
 import numpy as np
 import argparse
+
+class FeatureExtractor():
+	""" Class for extracting activations and 
+	registering gradients from targetted intermediate layers """
+	def __init__(self, model, target_layers):
+		self.model = model
+		self.target_layers = target_layers
+		self.gradients = []
+
+	def save_gradient(self, grad):
+		self.gradients.append(grad)
+
+	def __call__(self, x):
+		outputs = []
+		self.gradients = []
+		for name, module in self.model._modules.items():
+			x = module(x)
+			if name in self.target_layers:
+				x.register_hook(self.save_gradient)
+				outputs += [x]
+		return outputs, x
+
+class ModelOutputs():
+	""" Class for making a forward pass, and getting:
+	1. The network output.
+	2. Activations from intermeddiate targetted layers.
+	3. Gradients from intermeddiate targetted layers. """
+	def __init__(self, model, target_layers):
+		self.model = model
+		self.feature_extractor = FeatureExtractor(self.model.features, target_layers)
+
+	def get_gradients(self):
+		return self.feature_extractor.gradients
+
+	def __call__(self, x):
+		target_activations, output  = self.feature_extractor(x)
+		output = output.view(output.size(0), -1)
+		output = self.model.classifier(output)
+		return target_activations, output
 
 def preprocess_image(img):
 	means=[0.485, 0.456, 0.406]
@@ -31,114 +70,57 @@ def show_cam_on_image(img, mask):
 	cam = cam / np.max(cam)
 	cv2.imwrite("cam.jpg", np.uint8(255 * cam))
 
-
-# class FeatureExtractor():
-#     """ Class for extracting activations and 
-#     registering gradients from targetted intermediate layers """
-#     def __init__(self, model, target_layers):
-#         self.model = model
-#         self.target_layers = target_layers
-#         self.gradients = []
-
-#     def save_gradient(self, grad):
-#     	self.gradients.append(grad)
-
-#     def __call__(self, x):
-#         outputs = []
-#         self.gradients = []
-#         print("===")
-#         for name, module in self.model._modules.items():
-#             x = module(x)
-#             print(name)
-#             if name in self.target_layers:
-#                 x.register_hook(self.save_gradient)
-#                 outputs += [x]
-#         exit()
-#         return outputs, x
-
-class ModelOutputs():
-	""" Class for making a forward pass, and getting:
-	1. The network output.
-	2. Activations from intermeddiate targetted layers.
-	3. Gradients from intermeddiate targetted layers. """
-	def __init__(self, model, target_layers):
-		self.model = model
-		self.feats = feats
-		self.grads = grads
-		self.output = output
-		# self.feature_extractor = FeatureExtractor(self.model.subnets, target_layers) #############
-
-	def get_gradients(self):
-		return self.grads
-
-	def __call__(self):
-		# target_activations, output  = self.feature_extractor(x)
-		# output = output.view(output.size(0), -1)
-		# output = self.model.classifier(output)
-		return self.feats, self.output
-
-
 class GradCam:
-	def __init__(self, model):
+	def __init__(self, model, target_layer_names, use_cuda):
 		self.model = model
 		self.model.eval()
-		self.cuda = torch.cuda.is_available()
+		self.cuda = use_cuda
 		if self.cuda:
 			self.model = model.cuda()
 
-		# self.extractor = ModelOutputs(self.model, feats, grads, output)
+		self.extractor = ModelOutputs(self.model, target_layer_names)
 
 	def forward(self, input):
 		return self.model(input) 
 
-	# def __call__(self, index = None, features=None, scores=None):
-	def __call__(self, index = None, input_var=None, imgNo=0, ClfrNo=0):
-
-		scores, features = self.model(input_var, 0.0, p=1)
-		# score = scores[0]
-
-		# import pdb
-		# pdb.set_trace()
-
-		# for i in scores[1:7]:
-		# 	score += i
-
-		scores, features = scores[ClfrNo][imgNo], features[ClfrNo][imgNo]
-		# scores = score[imgNo]
+	def __call__(self, input, index = None):
+		if self.cuda:
+			features, output = self.extractor(input.cuda())
+		else:
+			features, output = self.extractor(input)
 
 		if index == None:
-			index = np.argmax(scores.cpu().data.numpy())
+			index = np.argmax(output.cpu().data.numpy())
 
-		one_hot = np.zeros((1, scores.size()[-1]), dtype = np.float32)
+		one_hot = np.zeros((1, output.size()[-1]), dtype = np.float32)
 		one_hot[0][index] = 1
 		one_hot = Variable(torch.from_numpy(one_hot), requires_grad = True)
 		if self.cuda:
-			one_hot = torch.sum(one_hot.cuda() * scores)
+			one_hot = torch.sum(one_hot.cuda() * output)
 		else:
-			one_hot = torch.sum(one_hot * scores)
+			one_hot = torch.sum(one_hot * output)
 
-		
-		self.model.subnets.zero_grad()
-		one_hot.backward(create_graph=True)#retain_variables=True)
+		self.model.features.zero_grad()
+		self.model.classifier.zero_grad()
+		print(self.extractor.get_gradients())
+		one_hot.backward(create_graph=True)
 
-		# import pdb
-		# pdb.set_trace()
-		
-		# print(self.model.gradients.shape)
-		grads_val = self.model.gradients[-1].cpu().data.numpy()
+		grads_val = self.extractor.get_gradients()[-1].cpu().data.numpy()
 
-		target = features#[-1]
-		target = target.cpu().data.numpy()#[0, :]
+		target = features[-1]
+		target = target.cpu().data.numpy()[0, :]
 
 		weights = np.mean(grads_val, axis = (2, 3))[0, :]
 		cam = np.zeros(target.shape[1 : ], dtype = np.float32)
 
-		# pdb.set_trace()
 		for i, w in enumerate(weights):
-			cam += w * target[i]#, :, :]
+			cam += w * target[i, :, :]
+		
+		import pdb
+		pdb.set_trace()
 
 		cam = np.maximum(cam, 0)
-		cam = cv2.resize(cam, (256, 256))
+		cam = cv2.resize(cam, (224, 224))
 		cam = cam - np.min(cam)
 		cam = cam / np.max(cam)
 		return cam
@@ -162,24 +144,27 @@ class GuidedBackpropReLU(Function):
 		return grad_input
 
 class GuidedBackpropReLUModel:
-	def __init__(self, model):
+	def __init__(self, model, use_cuda):
 		self.model = model
 		self.model.eval()
-		self.cuda = torch.cuda.is_available()
+		self.cuda = use_cuda
 		if self.cuda:
 			self.model = model.cuda()
 
 		# replace ReLU with GuidedBackpropReLU
-		for idx, module in self.model.subnets._modules.items():
+		for idx, module in self.model.features._modules.items():
 			if module.__class__.__name__ == 'ReLU':
 				self.model.features._modules[idx] = GuidedBackpropReLU()
 
 	def forward(self, input):
 		return self.model(input)
 
-	def __call__(self, index = None, input_var=None, imgNo=0, ClfrNo=0):
+	def __call__(self, input, index = None):
+		if self.cuda:
+			output = self.forward(input.cuda())
+		else:
+			output = self.forward(input)
 
-		output= self.model(input_var, 0.0)[ClfrNo][imgNo]
 		if index == None:
 			index = np.argmax(output.cpu().data.numpy())
 
@@ -191,13 +176,13 @@ class GuidedBackpropReLUModel:
 		else:
 			one_hot = torch.sum(one_hot * output)
 
-		self.model.subnets.zero_grad()
+		# self.model.features.zero_grad()
 		# self.model.classifier.zero_grad()
 		one_hot.backward(create_graph=True)
 
-		output = input_var.grad.cpu().data.numpy()
-		output = output[0,:,:,:].transpose(1,2,0)
-		output = cv2.resize(output, (256, 256))
+		output = input.grad.cpu().data.numpy()
+		output = output[0,:,:,:]
+
 		return output
 
 def get_args():

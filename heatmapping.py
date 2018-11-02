@@ -156,6 +156,8 @@ def main(**kwargs):
     for arg, v in kwargs.items():
         args.__setattr__(arg, v)
 
+    args.maxC = 9
+    imgNo, ClfrNo = 1,args.maxC-1
     ### Calculate FLOPs & Param
     model = getattr(models, args.model)(args)
 
@@ -243,16 +245,31 @@ def main(**kwargs):
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
 
+        (inputM, targetM) = (input, target)
+        # import pdb
+        # pdb.set_trace()
+        
+        input, target = input[imgNo], target[imgNo].view(1)
+
+        input = input.view(1,input.shape[0], input.shape[1],input.shape[2])
 
         if torch.cuda.is_available():
             target = target.cuda(async=True)
         
-        input_var = torch.autograd.Variable(input, volatile=True)
-        target_var = torch.autograd.Variable(target, volatile=True)
+        input_var = torch.autograd.Variable(input, requires_grad=True)
+        target_var = torch.autograd.Variable(target)
 
         # ### Compute output
-        output, feats = model(input_var, 0.0, p=2)
-        
+
+        # scores, feats = model(input_var, 0.0, p=1)
+
+        # if args.model == 'msdnet':
+        #     loss = msd_loss(scores, target_var, criterion)
+        # else:
+        #     loss = criterion(scores, target_var)
+
+        # loss.backward(create_graph=True)
+        # grads = model.gradients
         # print(len(output))
         # print(len(output[0]))
         # # print(target)
@@ -269,55 +286,74 @@ def main(**kwargs):
 
     ####################### Business ############################################
         from gradCam import *
-        grad_cam = GradCam(model = model, \
-                        target_layer_names = ["35"], use_cuda=torch.cuda.is_available(), feats=feats)
+        # print(len(output), len(grads), len(feats))
+        grad_cam = GradCam(model = model)
+        # print(model.gradients)
+        # print("--")
+        # mask = grad_cam(None, features=feats[ClfrNo][0], scores=scores[ClfrNo][0])#target_index)
+        mask = grad_cam(None, input_var, 0, ClfrNo)#target_index)
 
-        mask = grad_cam(input, None)#target_index)
-        print("--")
+        img = input[0].cpu().data.numpy().transpose(1,2,0)
+        img = cv2.resize(img, (256, 256))
+        show_cam_on_image(img, mask)
+
+        gb_model = GuidedBackpropReLUModel(model)
+        gb = gb_model(None, input_var, 0, ClfrNo).transpose(2,0,1)
+        # import pdb
+        # pdb.set_trace()
+        utils.save_image(torch.from_numpy(gb), 'gb.jpg')
+
+        cam_mask = np.zeros(gb.shape)
+        for i in range(0, gb.shape[0]):
+            cam_mask[i, :, :] = mask
+
+        cam_gb = np.multiply(cam_mask, gb)
+        utils.save_image(torch.from_numpy(cam_gb), 'cam_gb.jpg')
+        img = cv2.resize(input.cpu().data.numpy()[0].transpose(1,2,0), (256, 256))
+        # import pdb
+        # pdb.set_trace()
+
+        utils.save_image(torch.from_numpy(img.transpose(2,0,1)), 'input.jpg')
         exit()
     #############################################################################
 
 
 
-        if args.model == 'msdnet':
-            loss = msd_loss(output, target_var, criterion)
-        else:
-            loss = criterion(output, target_var)
 
         ### Measure accuracy and record loss
-        if hasattr(output, 'data'):
-            prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-        elif args.model == 'msdnet':
-            prec1, prec5, _ = msdnet_accuracy(output, target, input)
-        losses.update(loss.data[0], input.size(0))
-        top1.update(prec1[0], input.size(0))
-        top5.update(prec5[0], input.size(0))
+    #     if hasattr(output, 'data'):
+    #         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
+    #     elif args.model == 'msdnet':
+    #         prec1, prec5, _ = msdnet_accuracy(output, target, input)
+    #     losses.update(loss.data[0], input.size(0))
+    #     top1.update(prec1[0], input.size(0))
+    #     top5.update(prec5[0], input.size(0))
 
-        ### Measure elapsed time
-        batch_time.update(time.time() - end)
-        end = time.time()
+    #     ### Measure elapsed time
+    #     batch_time.update(time.time() - end)
+    #     end = time.time()
 
-        if i % args.print_freq == 0:
-            print('Test: [{0}/{1}]\t'
-                  'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-                  'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-                  'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-                  'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-                      i, len(val_loader), batch_time=batch_time, loss=losses,
-                      top1=top1, top5=top5))
+    #     if i % args.print_freq == 0:
+    #         print('Test: [{0}/{1}]\t'
+    #               'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
+    #               'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
+    #               'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
+    #               'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
+    #                   i, len(val_loader), batch_time=batch_time, loss=losses,
+    #                   top1=top1, top5=top5))
         
-        _, _, (ttop1s, ttop5s) = msdnet_accuracy(output, target, input,
-                                             val=True)
-        for c in range(0,len(top1_per_cls)):
-            top1_per_cls[c].update(ttop1s[c], input.size(0))
-            top5_per_cls[c].update(ttop5s[c], input.size(0))
+    #     _, _, (ttop1s, ttop5s) = msdnet_accuracy(output, target, input,
+    #                                          val=True)
+    #     for c in range(0,len(top1_per_cls)):
+    #         top1_per_cls[c].update(ttop1s[c], input.size(0))
+    #         top5_per_cls[c].update(ttop5s[c], input.size(0))
 
-    print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-          .format(top1=top1, top5=top5))
-    for c in range(0, len(top1_per_cls)):
-        print(' * For class {cls}: Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-                  .format(cls=c,top1=top1_per_cls[c], top5=top5_per_cls[c]))
-    return 100. - top1.avg, 100. - top5.avg
+    # print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
+    #       .format(top1=top1, top5=top5))
+    # for c in range(0, len(top1_per_cls)):
+    #     print(' * For class {cls}: Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
+    #               .format(cls=c,top1=top1_per_cls[c], top5=top5_per_cls[c]))
+    # return 100. - top1.avg, 100. - top5.avg
 
 
 if __name__ == '__main__':

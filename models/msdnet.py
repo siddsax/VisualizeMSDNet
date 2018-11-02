@@ -27,6 +27,7 @@ class MSDNet(nn.Module):
 
         # Init arguments
         self.args = args
+        self.maxC = self.args.maxC
         self.base = self.args.msd_base
         self.step = self.args.msd_step
         self.step_mode = self.args.msd_stepmode
@@ -37,7 +38,9 @@ class MSDNet(nn.Module):
         self.growth_factor = args.msd_growth_factor
         self.bottleneck = self.args.msd_bottleneck
         self.bottleneck_factor = args.msd_bottleneck_factor
+        self.gradients = []
 
+        
 
         # Set progress
         if args.data in ['cifar10', 'cifar100']:
@@ -58,10 +61,26 @@ class MSDNet(nn.Module):
         self.cur_layer = 1
         self.cur_transition_layer = 1
         self.subnets = nn.ModuleList(self.build_modules(self.num_channels))
+
+        # for block_num in range(self.num_blocks):
+        #     print(self.subnets[block_num])
+        #     self.subnets[block_num].register_backward_hook(self.hookFunc)
+        #     print("+++++++++++++++++++++++++++++++++++++++++")
+        # print(self.subnets[block_num+1])
+        # print("=====================")
+
+        # self.subnets[0].MSD_layer_4.subnets[-1].conv_modules[-1].register_backward_hook(self.hookFunc)
+        self.subnets[0].MSD_layer_4.subnets[-1].register_backward_hook(self.hookFunc)
         # import pdb
         # pdb.set_trace()
 
-        # self.features = self.subnets
+
+        # for block_num in range(self.num_blocks):
+        #     self.subnets[block_num+10].register_backward_hook(self.hookFunc)
+
+        # import pdb
+        # pdb.set_trace()
+
         # initialize
         for m in self.subnets:
             self.init_weights(m)
@@ -201,6 +220,15 @@ class MSDNet(nn.Module):
         print('| Layer {:0>2d} input scales {} output scales {} |'.
               format(self.cur_layer, in_scales, out_scales))
 
+    def save_gradient(self, grad):
+    	self.gradients.append(grad)
+    
+    def hookFunc(self, module, gradInput, gradOutput):
+        self.gradients.append(gradOutput[0])
+        # self.gradients.append(gradOutput[0])
+
+        # import pdb
+        # pdb.set_trace()
     def forward(self, x, progress=None, p=0):
         """
         Propagate Input image in all blocks of MSD layers and classifiers
@@ -213,8 +241,15 @@ class MSDNet(nn.Module):
         outputs = [None] * self.num_blocks
         feats = [None] * self.num_blocks
         probab = [None] * self.num_blocks
+
+        outputs = [None] * self.maxC
+        feats = [None] * self.maxC
+        probab = [None] * self.maxC
+
+
         cur_input = x
-        for block_num in range(0, self.num_blocks):
+        # for block_num in range(0, self.num_blocks):
+        for block_num in range(0, self.maxC ):
 
             # Get the current block's output
             if self.args.debug:
@@ -230,13 +265,11 @@ class MSDNet(nn.Module):
                     print("- Output size of this block's scale {}: ".format(s),
                           b.size())
             class_output = self.subnets[block_num+self.num_blocks](block_output[-1])
-            feat = self.subnets[block_num+self.num_blocks].penFeat(block_output[-1])
+            feat = block_output[-1]
             outputs[block_num] = class_output
             probab[block_num] = torch.nn.functional.softmax(class_output, dim=-1)
             feats[block_num] = feat
-            # import pdb
-            # pdb.set_trace()
-        # return outputs
+
         if p==0:
             return outputs
         if p==1:
