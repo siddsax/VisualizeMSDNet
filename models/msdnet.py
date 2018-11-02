@@ -27,7 +27,7 @@ class MSDNet(nn.Module):
 
         # Init arguments
         self.args = args
-        self.maxC = self.args.maxC
+        
         self.base = self.args.msd_base
         self.step = self.args.msd_step
         self.step_mode = self.args.msd_stepmode
@@ -40,6 +40,10 @@ class MSDNet(nn.Module):
         self.bottleneck_factor = args.msd_bottleneck_factor
         self.gradients = []
 
+        try:
+            self.maxC = self.args.maxC
+        except:
+            self.maxC = self.num_blocks
         
 
         # Set progress
