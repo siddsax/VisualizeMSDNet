@@ -24,12 +24,12 @@ def preprocess_image(img):
 	input = Variable(preprocessed_img, requires_grad = True)
 	return input
 
-def show_cam_on_image(img, mask):
+def show_cam_on_image(img, mask, name):
 	heatmap = cv2.applyColorMap(np.uint8(255*mask), cv2.COLORMAP_JET)
 	heatmap = np.float32(heatmap) / 255
 	cam = heatmap + np.float32(img)
 	cam = cam / np.max(cam)
-	cv2.imwrite("cam.jpg", np.uint8(255 * cam))
+	cv2.imwrite(name +"_cam.jpg", np.uint8(255 * cam))
 
 
 # class FeatureExtractor():
@@ -111,6 +111,8 @@ class GradCam:
 
 		one_hot = np.zeros((1, scores.size()[-1]), dtype = np.float32)
 		one_hot[0][index] = 1
+		# import pdb
+		# pdb.set_trace()
 		one_hot = Variable(torch.from_numpy(one_hot), requires_grad = True)
 		if self.cuda:
 			one_hot = torch.sum(one_hot.cuda() * scores)
@@ -138,7 +140,7 @@ class GradCam:
 			cam += w * target[i]#, :, :]
 
 		cam = np.maximum(cam, 0)
-		cam = cv2.resize(cam, (256, 256))
+		cam = cv2.resize(cam, (512, 512))
 		cam = cam - np.min(cam)
 		cam = cam / np.max(cam)
 		return cam
@@ -197,7 +199,7 @@ class GuidedBackpropReLUModel:
 
 		output = input_var.grad.cpu().data.numpy()
 		output = output[0,:,:,:].transpose(1,2,0)
-		output = cv2.resize(output, (256, 256))
+		output = cv2.resize(output, (512, 512))
 		return output
 
 def get_args():

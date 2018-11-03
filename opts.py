@@ -86,6 +86,10 @@ parser.add_argument('--msd-gcn-kernel', type=int, metavar='KERNEL_SIZE',
                     help='GCN Conv2d kernel size', default=7)
 parser.add_argument('--msd-kernel', type=int, metavar='KERNEL_SIZE',
                     help='MSD Conv2d kernel size', default=3)
+parser.add_argument('--maxC', dest='maxC', type=int, default=10)
+parser.add_argument('--imgNo', dest='imgNo', type=int, default=-1)
+
+
 
 # Init Environment
 args = parser.parse_args()

@@ -443,3 +443,16 @@ def accuracy(output, target, topk=(1,)):
 
 if __name__ == '__main__':
     main()
+
+
+#  * Prec@1 93.521 Prec@5 99.770
+#  * For class 0: Prec@1 90.800 Prec@5 99.740
+#  * For class 1: Prec@1 92.330 Prec@5 99.760
+#  * For class 2: Prec@1 93.180 Prec@5 99.800
+#  * For class 3: Prec@1 93.760 Prec@5 99.750
+#  * For class 4: Prec@1 94.140 Prec@5 99.780
+#  * For class 5: Prec@1 94.130 Prec@5 99.750
+#  * For class 6: Prec@1 94.270 Prec@5 99.800
+#  * For class 7: Prec@1 94.220 Prec@5 99.810
+#  * For class 8: Prec@1 94.210 Prec@5 99.720
+#  * For class 9: Prec@1 94.170 Prec@5 99.790

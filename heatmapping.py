@@ -27,6 +27,7 @@ from utils import measure_model
 from opts import args
 
 
+
 # Init Torch/Cuda
 if torch.cuda.is_available():
     torch.cuda.manual_seed_all(args.manual_seed)
@@ -60,6 +61,16 @@ def msd_loss(output, target_var, criterion):
     mean_loss = sum(losses) / len(output)
     return mean_loss
 
+def correctNess(scores, target_var):
+    cNess = []
+    for score in scores:
+        argmax = score.max(-1)[1]
+        print(argmax)
+        if argmax == target_var:
+            cNess.append(1)
+        else:
+            cNess.append(0)
+    return cNess
 
 def msdnet_accuracy(output, target, x, val=False):
     """
@@ -152,12 +163,27 @@ def main(**kwargs):
 
     global args, best_prec1
 
+
+    mapper = {
+        1 : 'airplane',
+        2 : 'automobile',
+        3 : 'bird',
+
+        4 : 'cat',
+        5 : 'deer',
+        6 : 'dog',
+
+        7 : 'frog',
+        8 : 'horse',
+        9 : 'ship',
+        10 : 'truck'
+    }
     # Override if needed
     for arg, v in kwargs.items():
         args.__setattr__(arg, v)
 
-    args.maxC = 9
-    imgNo, ClfrNo = 1,args.maxC-1
+    # args.maxC = 3
+    ClfrNo = args.maxC-1
     ### Calculate FLOPs & Param
     model = getattr(models, args.model)(args)
 
@@ -229,8 +255,13 @@ def main(**kwargs):
 
     val_loader = torch.utils.data.DataLoader(
         val_set,
-        batch_size=args.batch_size, shuffle=False,
+        batch_size=2, shuffle=False,
         num_workers=args.workers, pin_memory=True)
+    # val_loader = torch.utils.data.DataLoader(
+    #     val_set,
+    #     batch_size=args.batch_size, shuffle=False,
+    #     num_workers=args.workers, pin_memory=True)
+
 
     batch_time = AverageMeter()
     losses = AverageMeter()
@@ -243,13 +274,13 @@ def main(**kwargs):
     model.eval()
 
     end = time.time()
+    from gradCam import *
     for i, (input, target) in enumerate(val_loader):
 
-        (inputM, targetM) = (input, target)
-        # import pdb
-        # pdb.set_trace()
-        
-        input, target = input[imgNo], target[imgNo].view(1)
+        if args.imgNo > 0 and i!=args.imgNo:
+            continue
+        (inputM, targetM) = (input, target)       
+        input, target = input[0], target[0].view(1)
 
         input = input.view(1,input.shape[0], input.shape[1],input.shape[2])
 
@@ -261,13 +292,19 @@ def main(**kwargs):
 
         # ### Compute output
 
-        # scores, feats = model(input_var, 0.0, p=1)
+        scores, feats = model(input_var, 0.0, p=1)
 
-        # if args.model == 'msdnet':
-        #     loss = msd_loss(scores, target_var, criterion)
-        # else:
-        #     loss = criterion(scores, target_var)
+        if args.model == 'msdnet':
+            loss = msd_loss(scores, target_var, criterion)
+        else:
+            loss = criterion(scores, target_var)
 
+        if mapper[target_var.cpu().data.numpy()[0]+1] == 'dog':
+            print(correctNess(scores, target_var), i, mapper[target_var.cpu().data.numpy()[0]+1])
+        # elif args.imgNo < 0:
+        #     print(correctNess(scores, target_var), i, mapper[target_var.cpu().data.numpy()[0]+1])
+        name = 'diags/' + mapper[target_var.cpu().data.numpy()[0]+1] + '_' + str(args.imgNo) + '_' + str(args.maxC)
+        name2 = 'diags/' + mapper[target_var.cpu().data.numpy()[0]+1] + '_' + str(args.imgNo)
         # loss.backward(create_graph=True)
         # grads = model.gradients
         # print(len(output))
@@ -285,76 +322,29 @@ def main(**kwargs):
 
 
     ####################### Business ############################################
-        from gradCam import *
-        # print(len(output), len(grads), len(feats))
-        grad_cam = GradCam(model = model)
-        # print(model.gradients)
-        # print("--")
-        # mask = grad_cam(None, features=feats[ClfrNo][0], scores=scores[ClfrNo][0])#target_index)
-        mask = grad_cam(None, input_var, 0, ClfrNo)#target_index)
 
-        img = input[0].cpu().data.numpy().transpose(1,2,0)
-        img = cv2.resize(img, (256, 256))
-        show_cam_on_image(img, mask)
+        if i == args.imgNo:
+            print("Category : {}".format(mapper[target_var.cpu().data.numpy()[0]+1]))
+            print(correctNess(scores, target_var))
+            grad_cam = GradCam(model = model)
+            mask = grad_cam(target_var.cpu().data.numpy()[0], input_var, 0, ClfrNo)#target_index)
+            gb_model = GuidedBackpropReLUModel(model)
+            gb = gb_model(target_var.cpu().data.numpy()[0], input_var, 0, ClfrNo).transpose(2,0,1)
 
-        gb_model = GuidedBackpropReLUModel(model)
-        gb = gb_model(None, input_var, 0, ClfrNo).transpose(2,0,1)
-        # import pdb
-        # pdb.set_trace()
-        utils.save_image(torch.from_numpy(gb), 'gb.jpg')
 
-        cam_mask = np.zeros(gb.shape)
-        for i in range(0, gb.shape[0]):
-            cam_mask[i, :, :] = mask
-
-        cam_gb = np.multiply(cam_mask, gb)
-        utils.save_image(torch.from_numpy(cam_gb), 'cam_gb.jpg')
-        img = cv2.resize(input.cpu().data.numpy()[0].transpose(1,2,0), (256, 256))
-        # import pdb
-        # pdb.set_trace()
-
-        utils.save_image(torch.from_numpy(img.transpose(2,0,1)), 'input.jpg')
-        exit()
+            img = input[0].cpu().data.numpy().transpose(1,2,0)
+            img = cv2.resize(img, (512, 512))
+            show_cam_on_image(img, mask, name)
+            utils.save_image(torch.from_numpy(gb), name +'_gb.jpg')
+            cam_mask = np.zeros(gb.shape)
+            for i in range(0, gb.shape[0]):
+                cam_mask[i, :, :] = mask
+            cam_gb = np.multiply(cam_mask, gb)
+            utils.save_image(torch.from_numpy(cam_gb), name +'_cam_gb.jpg')
+            img = cv2.resize(input.cpu().data.numpy()[0].transpose(1,2,0), (512, 512))
+            utils.save_image(torch.from_numpy(img.transpose(2,0,1)), name2 + '_input.jpg')
+            exit()
     #############################################################################
-
-
-
-
-        ### Measure accuracy and record loss
-    #     if hasattr(output, 'data'):
-    #         prec1, prec5 = accuracy(output.data, target, topk=(1, 5))
-    #     elif args.model == 'msdnet':
-    #         prec1, prec5, _ = msdnet_accuracy(output, target, input)
-    #     losses.update(loss.data[0], input.size(0))
-    #     top1.update(prec1[0], input.size(0))
-    #     top5.update(prec5[0], input.size(0))
-
-    #     ### Measure elapsed time
-    #     batch_time.update(time.time() - end)
-    #     end = time.time()
-
-    #     if i % args.print_freq == 0:
-    #         print('Test: [{0}/{1}]\t'
-    #               'Time {batch_time.val:.3f} ({batch_time.avg:.3f})\t'
-    #               'Loss {loss.val:.4f} ({loss.avg:.4f})\t'
-    #               'Prec@1 {top1.val:.3f} ({top1.avg:.3f})\t'
-    #               'Prec@5 {top5.val:.3f} ({top5.avg:.3f})'.format(
-    #                   i, len(val_loader), batch_time=batch_time, loss=losses,
-    #                   top1=top1, top5=top5))
-        
-    #     _, _, (ttop1s, ttop5s) = msdnet_accuracy(output, target, input,
-    #                                          val=True)
-    #     for c in range(0,len(top1_per_cls)):
-    #         top1_per_cls[c].update(ttop1s[c], input.size(0))
-    #         top5_per_cls[c].update(ttop5s[c], input.size(0))
-
-    # print(' * Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-    #       .format(top1=top1, top5=top5))
-    # for c in range(0, len(top1_per_cls)):
-    #     print(' * For class {cls}: Prec@1 {top1.avg:.3f} Prec@5 {top5.avg:.3f}'
-    #               .format(cls=c,top1=top1_per_cls[c], top5=top5_per_cls[c]))
-    # return 100. - top1.avg, 100. - top5.avg
-
 
 if __name__ == '__main__':
     main()
