@@ -54,12 +54,12 @@ parser.add_argument('--debug', action='store_true', help='enable debugging')
 # MSDNet args
 parser.add_argument('--msd-base', type=int, metavar='B', default=4,
                     help='The layer to attach the first classifier (default: 4)')
-parser.add_argument('--msd-blocks', type=int, metavar='nB', default=1,
+parser.add_argument('--msd-blocks', type=int, metavar='nB', default=10,
                     help='Number of blocks/classifiers (default: 1)')
 parser.add_argument('--msd-stepmode', type=str, metavar='nB', default='even',
                     help='Pattern of span between two adjacent classifers'
                          ' [even|lin_grow] (default: even)')
-parser.add_argument('--msd-step', type=int, metavar='S', default=1,
+parser.add_argument('--msd-step', type=int, metavar='S', default=2,
                     help='Span between two adjacent classifers (default: 1)')
 parser.add_argument('--msd-bottleneck', default=True, action='store_true',
                     help='Use 1x1 conv layer or not (default: True)')
@@ -88,7 +88,7 @@ parser.add_argument('--msd-kernel', type=int, metavar='KERNEL_SIZE',
                     help='MSD Conv2d kernel size', default=3)
 parser.add_argument('--maxC', dest='maxC', type=int, default=10)
 parser.add_argument('--imgNo', dest='imgNo', type=int, default=-1)
-
+parser.add_argument('--cl', dest='classLabel', type=str, default="")
 
 
 # Init Environment

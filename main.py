@@ -1,10 +1,3 @@
-#!/usr/bin/python3
-#
-# Example run:
-# ./main.py --model msdnet -b 2 -j 2 cifar10 --msd-blocks 10 --msd-base 4 --msd-step 2 \
-#  --msd-stepmode even --growth 6-12-24 --gpu 0
-# For evaluation / resume add: --resume --evaluate
-
 from __future__ import absolute_import
 from __future__ import unicode_literals
 from __future__ import print_function
@@ -33,6 +26,123 @@ torch.cuda.manual_seed_all(args.manual_seed)
 os.environ["CUDA_VISIBLE_DEVICES"] = args.gpu
 best_prec1 = 0
 
+
+class AverageMeter(object):
+    """Computes and stores the average and current value"""
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+def msd_loss(output, target_var, criterion):
+    losses = []
+    for out in range(0, len(output)):
+        losses.append(criterion(output[out], target_var))
+    mean_loss = sum(losses) / len(output)
+    return mean_loss
+
+
+def msdnet_accuracy(output, target, x, val=False):
+    """
+    Calculates multi-classifier accuracy
+
+    :param output: A list in the length of the number of classifiers,
+                   including output tensors of size (batch, classes)
+    :param target: a tensor of length batch_size, including GT
+    :param x: network input input
+    :param val: A flag to print per class validation accuracy
+    :return: mean precision of top1 and top5
+    """
+
+    top1s = []
+    top5s = []
+    if torch.cuda.is_available():
+        prec1 = torch.FloatTensor([0]).cuda()
+        prec5 = torch.FloatTensor([0]).cuda()
+    else:
+        prec1 = torch.FloatTensor([0])
+        prec5 = torch.FloatTensor([0])
+
+    for out in output:
+        tprec1, tprec5 = accuracy(out.data, target, topk=(1, 5))
+        prec1 += tprec1
+        prec5 += tprec5
+        top1s.append(tprec1[0])
+        top5s.append(tprec5[0])
+
+    if val:
+        for c in range(0, len(top1s)):
+            print("Classifier {} top1: {} top5: {}".
+              format(c, top1s[c], top5s[c]))
+    prec1 = prec1 / len(output)
+    prec5 = prec5 / len(output)
+    return prec1, prec5, (top1s, top5s)
+
+def load_checkpoint(args):
+
+    if args.evaluate_from:
+        print("Evaluating from model: ", args.evaluate_from)
+        model_filename = args.evaluate_from
+    else:
+        model_dir = os.path.join(args.savedir, 'save_models')
+        latest_filename = os.path.join(model_dir, 'latest.txt')
+        if os.path.exists(latest_filename):
+            with open(latest_filename, 'r') as fin:
+                model_filename = fin.readlines()[0].strip()
+        else:
+            return None
+    print("=> loading checkpoint '{}'".format(model_filename))
+    if torch.cuda.is_available():
+        state = torch.load(model_filename)
+    else:
+        state = torch.load(model_filename, map_location=lambda storage, loc: storage)
+        
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in state['state_dict'].items():
+            name = k[7:] # remove `module.`
+            new_state_dict[name] = v
+
+        state['state_dict'] = new_state_dict
+
+    print("=> loaded checkpoint '{}'".format(model_filename))
+    return state
+
+def accuracy(output, target, topk=(1,)):
+    """Computes the precision@k for the specified values of k"""
+    maxk = max(topk)
+    batch_size = target.size(0)
+
+    _, pred = output.topk(maxk, 1, True, True)
+    pred = pred.t()
+    correct = pred.eq(target.view(1, -1).expand_as(pred))
+
+    res = []
+    for k in topk:
+        correct_k = correct[:k].view(-1).float().sum(0)
+        res.append(correct_k.mul_(100.0 / batch_size))
+    return res
+
+def save_checkpoint(state, args, is_best, filename, result):
+    print(args)
+    result_filename = os.path.join(args.savedir, args.filename)
+    model_dir = os.path.join(args.savedir, 'save_models')
+    model_filename = os.path.join(model_dir, filename)
+    latest_filename = os.path.join(model_dir, 'latest.txt')
+    best_filename = os.path.join(model_dir, 'model_best.pth.tar')
+    if not os.path.isdir(args.savedir):
+        os.makedirs(args.savedir)
+        os.makedirs(model_dir)
 
 def main(**kwargs):
 
@@ -67,7 +177,9 @@ def main(**kwargs):
         print(args)
         print(model)
 
-    model = torch.nn.DataParallel(model).cuda()
+    if torch.cuda.is_available():
+        model = torch.nn.DataParallel(model).cuda()
+        criterion = criterion.cuda()
 
     # Define loss function (criterion) and optimizer
     criterion = nn.CrossEntropyLoss().cuda()
@@ -88,8 +200,10 @@ def main(**kwargs):
     # Evaluate from a model
     if args.evaluate_from is not None:
         args.evaluate = True
-        state_dict = torch.load(args.evaluate_from)['state_dict']
-        model.load_state_dict(state_dict)
+        args.start_epoch = checkpoint['epoch'] + 1
+        best_prec1 = checkpoint['best_prec1']
+        model.load_state_dict(checkpoint['state_dict'])
+        optimizer.load_state_dict(checkpoint['optimizer'])
 
     cudnn.benchmark = True
 
@@ -238,44 +352,6 @@ def train(train_loader, model, criterion, optimizer, epoch):
     return 100. - top1.avg, 100. - top5.avg, losses.avg, running_lr
 
 
-def msd_loss(output, target_var, criterion):
-    losses = []
-    for out in range(0, len(output)):
-        losses.append(criterion(output[out], target_var))
-    mean_loss = sum(losses) / len(output)
-    return mean_loss
-
-
-def msdnet_accuracy(output, target, x, val=False):
-    """
-    Calculates multi-classifier accuracy
-
-    :param output: A list in the length of the number of classifiers,
-                   including output tensors of size (batch, classes)
-    :param target: a tensor of length batch_size, including GT
-    :param x: network input input
-    :param val: A flag to print per class validation accuracy
-    :return: mean precision of top1 and top5
-    """
-
-    top1s = []
-    top5s = []
-    prec1 = torch.FloatTensor([0]).cuda()
-    prec5 = torch.FloatTensor([0]).cuda()
-    for out in output:
-        tprec1, tprec5 = accuracy(out.data, target, topk=(1, 5))
-        prec1 += tprec1
-        prec5 += tprec5
-        top1s.append(tprec1[0])
-        top5s.append(tprec5[0])
-
-    if val:
-        for c in range(0, len(top1s)):
-            print("Classifier {} top1: {} top5: {}".
-              format(c, top1s[c], top5s[c]))
-    prec1 = prec1 / len(output)
-    prec5 = prec5 / len(output)
-    return prec1, prec5, (top1s, top5s)
 
 
 def validate(val_loader, model, criterion):
@@ -283,15 +359,20 @@ def validate(val_loader, model, criterion):
     losses = AverageMeter()
     top1 = AverageMeter()
     top5 = AverageMeter()
-    top1_per_cls = [AverageMeter() for i in range(0, model.module.num_blocks)]
-    top5_per_cls = [AverageMeter() for i in range(0, model.module.num_blocks)]
+    try:
+        top1_per_cls = [AverageMeter() for i in range(0, model.module.num_blocks)]
+        top5_per_cls = [AverageMeter() for i in range(0, model.module.num_blocks)]
+    except:
+        top1_per_cls = [AverageMeter() for i in range(0, model.num_blocks)]
+        top5_per_cls = [AverageMeter() for i in range(0, model.num_blocks)]
 
     ### Switch to evaluate mode
     model.eval()
 
     end = time.time()
     for i, (input, target) in enumerate(val_loader):
-        target = target.cuda(async=True)
+        if torch.cuda.is_available():
+            target = target.cuda(async=True)
         input_var = torch.autograd.Variable(input, volatile=True)
         target_var = torch.autograd.Variable(target, volatile=True)
 
@@ -338,36 +419,6 @@ def validate(val_loader, model, criterion):
     return 100. - top1.avg, 100. - top5.avg
 
 
-def load_checkpoint(args):
-
-    if args.evaluate_from:
-        print("Evaluating from model: ", args.evaluate_from)
-        model_filename = args.evaluate_from
-    else:
-        model_dir = os.path.join(args.savedir, 'save_models')
-        latest_filename = os.path.join(model_dir, 'latest.txt')
-        if os.path.exists(latest_filename):
-            with open(latest_filename, 'r') as fin:
-                model_filename = fin.readlines()[0].strip()
-        else:
-            return None
-    print("=> loading checkpoint '{}'".format(model_filename))
-    state = torch.load(model_filename)
-    print("=> loaded checkpoint '{}'".format(model_filename))
-    return state
-
-
-def save_checkpoint(state, args, is_best, filename, result):
-    print(args)
-    result_filename = os.path.join(args.savedir, args.filename)
-    model_dir = os.path.join(args.savedir, 'save_models')
-    model_filename = os.path.join(model_dir, filename)
-    latest_filename = os.path.join(model_dir, 'latest.txt')
-    best_filename = os.path.join(model_dir, 'model_best.pth.tar')
-    if not os.path.isdir(args.savedir):
-        os.makedirs(args.savedir)
-        os.makedirs(model_dir)
-
     # For mkdir -p when using python3
     # os.makedirs(args.savedir, exist_ok=True)
     # os.makedirs(model_dir, exist_ok=True)
@@ -387,22 +438,6 @@ def save_checkpoint(state, args, is_best, filename, result):
     return
 
 
-class AverageMeter(object):
-    """Computes and stores the average and current value"""
-    def __init__(self):
-        self.reset()
-
-    def reset(self):
-        self.val = 0
-        self.avg = 0
-        self.sum = 0
-        self.count = 0
-
-    def update(self, val, n=1):
-        self.val = val
-        self.sum += val * n
-        self.count += n
-        self.avg = self.sum / self.count
 
 
 def adjust_learning_rate(optimizer, epoch, args, batch=None,
@@ -425,21 +460,6 @@ def adjust_learning_rate(optimizer, epoch, args, batch=None,
         param_group['lr'] = lr
     return lr
 
-
-def accuracy(output, target, topk=(1,)):
-    """Computes the precision@k for the specified values of k"""
-    maxk = max(topk)
-    batch_size = target.size(0)
-
-    _, pred = output.topk(maxk, 1, True, True)
-    pred = pred.t()
-    correct = pred.eq(target.view(1, -1).expand_as(pred))
-
-    res = []
-    for k in topk:
-        correct_k = correct[:k].view(-1).float().sum(0)
-        res.append(correct_k.mul_(100.0 / batch_size))
-    return res
 
 if __name__ == '__main__':
     main()

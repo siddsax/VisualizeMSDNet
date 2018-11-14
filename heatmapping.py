@@ -1,10 +1,3 @@
-#!/usr/bin/python3
-#
-# Example run:
-# ./main.py --model msdnet -b 2 -j 2 cifar10 --msd-blocks 10 --msd-base 4 --msd-step 2 \
-#  --msd-stepmode even --growth 6-12-24 --gpu 0
-# For evaluation / resume add: --resume --evaluate
-
 from __future__ import absolute_import
 from __future__ import unicode_literals
 from __future__ import print_function
@@ -25,7 +18,6 @@ import torchvision.datasets as datasets
 import models
 from utils import measure_model
 from opts import args
-
 
 
 # Init Torch/Cuda
@@ -65,7 +57,6 @@ def correctNess(scores, target_var):
     cNess = []
     for score in scores:
         argmax = score.max(-1)[1]
-        print(argmax)
         if argmax == target_var:
             cNess.append(1)
         else:
@@ -136,8 +127,6 @@ def load_checkpoint(args):
 
         state['state_dict'] = new_state_dict
 
-        # model.load_state_dict(new_state_dict)
-
     print("=> loaded checkpoint '{}'".format(model_filename))
     return state
 
@@ -182,8 +171,6 @@ def main(**kwargs):
     for arg, v in kwargs.items():
         args.__setattr__(arg, v)
 
-    # args.maxC = 3
-    ClfrNo = args.maxC-1
     ### Calculate FLOPs & Param
     model = getattr(models, args.model)(args)
 
@@ -257,10 +244,6 @@ def main(**kwargs):
         val_set,
         batch_size=2, shuffle=False,
         num_workers=args.workers, pin_memory=True)
-    # val_loader = torch.utils.data.DataLoader(
-    #     val_set,
-    #     batch_size=args.batch_size, shuffle=False,
-    #     num_workers=args.workers, pin_memory=True)
 
 
     batch_time = AverageMeter()
@@ -268,8 +251,12 @@ def main(**kwargs):
     top1 = AverageMeter()
     top5 = AverageMeter()
 
-    top1_per_cls = [AverageMeter() for i in range(0, model.num_blocks)]
-    top5_per_cls = [AverageMeter() for i in range(0, model.num_blocks)]
+    try:
+        top1_per_cls = [AverageMeter() for i in range(0, model.module.num_blocks)]
+        top5_per_cls = [AverageMeter() for i in range(0, model.module.num_blocks)]
+    except:
+        top1_per_cls = [AverageMeter() for i in range(0, model.num_blocks)]
+        top5_per_cls = [AverageMeter() for i in range(0, model.num_blocks)]
 
     model.eval()
 
@@ -299,37 +286,26 @@ def main(**kwargs):
         else:
             loss = criterion(scores, target_var)
 
-        if mapper[target_var.cpu().data.numpy()[0]+1] == 'dog':
-            print(correctNess(scores, target_var), i, mapper[target_var.cpu().data.numpy()[0]+1])
-        # elif args.imgNo < 0:
-        #     print(correctNess(scores, target_var), i, mapper[target_var.cpu().data.numpy()[0]+1])
+    #############################################################################
+
         name = 'diags/' + mapper[target_var.cpu().data.numpy()[0]+1] + '_' + str(args.imgNo) + '_' + str(args.maxC)
         name2 = 'diags/' + mapper[target_var.cpu().data.numpy()[0]+1] + '_' + str(args.imgNo)
-        # loss.backward(create_graph=True)
-        # grads = model.gradients
-        # print(len(output))
-        # print(len(output[0]))
-        # # print(target)
-        # # print(args.batch_size)
-        # finalProb = []
-        # for j in range(10):
-        #     clfrProbs = []
-        #     for i in range(args.batch_size):
-        #         clfrProbs.append(output[j][i][target[i]])#[i]
-        #         out = probab[j][i][target[i]]
-        #         print(out) 
-        #     finalProb.append(clfrProbs)
-
-
-    ####################### Business ############################################
-
-        if i == args.imgNo:
+        
+        if len(args.classLabel): 
+            if mapper[target_var.cpu().data.numpy()[0]+1] == args.classLabel:
+                print(correctNess(scores, target_var), i, mapper[target_var.cpu().data.numpy()[0]+1])
+        elif args.imgNo < 0:
+            print(correctNess(scores, target_var), i, mapper[target_var.cpu().data.numpy()[0]+1])
+        elif i == args.imgNo:
+            import os
+            if not os.path.exists('diags'):
+                os.makedirs('diags')
             print("Category : {}".format(mapper[target_var.cpu().data.numpy()[0]+1]))
             print(correctNess(scores, target_var))
             grad_cam = GradCam(model = model)
-            mask = grad_cam(target_var.cpu().data.numpy()[0], input_var, 0, ClfrNo)#target_index)
+            mask = grad_cam(target_var.cpu().data.numpy()[0], input_var, 0, args.maxC-1)#target_index)
             gb_model = GuidedBackpropReLUModel(model)
-            gb = gb_model(target_var.cpu().data.numpy()[0], input_var, 0, ClfrNo).transpose(2,0,1)
+            gb = gb_model(target_var.cpu().data.numpy()[0], input_var, 0, args.maxC-1).transpose(2,0,1)
 
 
             img = input[0].cpu().data.numpy().transpose(1,2,0)
@@ -344,6 +320,8 @@ def main(**kwargs):
             img = cv2.resize(input.cpu().data.numpy()[0].transpose(1,2,0), (512, 512))
             utils.save_image(torch.from_numpy(img.transpose(2,0,1)), name2 + '_input.jpg')
             exit()
+        else:
+            continue
     #############################################################################
 
 if __name__ == '__main__':
