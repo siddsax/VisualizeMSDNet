@@ -43,3 +43,5 @@ Create the heatmap of a particular classifier and image
 python heatmapping.py --model msdnet -b 20  -j 2 cifar10  --growth 6-12-24 --gpu 0 --resume --evaluate-from anytime_cifar_10.pth.tar --imgNo=100 --maxC=5 # this means img 100 predicted with classifier 5 will be generated in folder diags
 ```
 
+Some samples of the same are as follows
+![](disp.png)
