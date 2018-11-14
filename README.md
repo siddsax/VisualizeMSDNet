@@ -1,4 +1,4 @@
-# Grad Visualizations for MSD-Net
+# Grad-CAM Visualizations for MSD-Net
 
 This repository contains the code for visualizing the model proposed in the paper Multi-Scale Dense Networks
 for Resource Efficient Image Classification [link](https://arxiv.org/pdf/1703.09844.pdf). The base code here for that paper is borrowed from the wonderfully replicated work of @avirambh from [here](https://github.com/avirambh/MSDNet-GCN). Also for Grad-CAM, the basic code is taken from [here](https://github.com/leftthomas/GradCAM). Here is a more generalized version that can be used for any custom network.
