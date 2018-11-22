@@ -1,4 +1,4 @@
-# Grad Visualizations for MSD-Net
+# Grad-CAM Visualizations for MSD-Net
 
 This repository contains the code for visualizing the model proposed in the paper Multi-Scale Dense Networks
 for Resource Efficient Image Classification [link](https://arxiv.org/pdf/1703.09844.pdf). The base code here for that paper is borrowed from the wonderfully replicated work of @avirambh from [here](https://github.com/avirambh/MSDNet-GCN). Also for Grad-CAM, the basic code is taken from [here](https://github.com/leftthomas/GradCAM). Here is a more generalized version that can be used for any custom network.
@@ -13,6 +13,7 @@ python main.py --model msdnet -b 20  -j 2 cifar10 --growth 6-12-24 --gpu 0 --res
 This nearly replicates the original paper which reports about 94.5% when budget is averaged.
 
 | Classifier No.|  Accuracy |
+|---------------|----------|
 | 0:            | 90.800 | 
 | 1:            | 92.330 | 
 | 2:            | 93.180 | 
@@ -22,9 +23,8 @@ This nearly replicates the original paper which reports about 94.5% when budget 
 | 6:            | 94.270 | 
 | 7:            | 94.220 | 
 | 8:            | 94.210 | 
-| 9:            | 94.170 | 
-| --------------|------  |
-| Mean          |93.521  |
+| 9:            | 94.170 |
+| **Mean**          | **93.521**  |
 
 This table also shows that the accuracy generally increases as number of blocks increase. 
 
