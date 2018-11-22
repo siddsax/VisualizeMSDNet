@@ -66,26 +66,27 @@ class MSDNet(nn.Module):
         self.cur_transition_layer = 1
         self.subnets = nn.ModuleList(self.build_modules(self.num_channels))
 
-        # for block_num in range(self.num_blocks):
-        #     print(self.subnets[block_num])
-        #     self.subnets[block_num].register_backward_hook(self.hookFunc)
-        #     print("+++++++++++++++++++++++++++++++++++++++++")
-        # print(self.subnets[block_num+1])
-        # print("=====================")
+        if args.maxC == 1:
+            self.subnets[0].MSD_layer_4.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 2:
+            self.subnets[1].MSD_layer_6.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 3:        
+            self.subnets[2].MSD_layer_8.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 4:
+            self.subnets[3].MSD_layer_10.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 5:
+            self.subnets[4].MSD_layer_12.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 6:
+            self.subnets[5].MSD_layer_14.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 7:
+            self.subnets[6].MSD_layer_16.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 8:
+            self.subnets[7].MSD_layer_18.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 9:
+            self.subnets[8].MSD_layer_20.subnets[-1].register_backward_hook(self.hookFunc)
+        elif args.maxC == 10:
+            self.subnets[9].MSD_layer_22.subnets[-1].register_backward_hook(self.hookFunc)
 
-        # self.subnets[0].MSD_layer_4.subnets[-1].conv_modules[-1].register_backward_hook(self.hookFunc)
-        self.subnets[0].MSD_layer_4.subnets[-1].register_backward_hook(self.hookFunc)
-        # import pdb
-        # pdb.set_trace()
-
-
-        # for block_num in range(self.num_blocks):
-        #     self.subnets[block_num+10].register_backward_hook(self.hookFunc)
-
-        # import pdb
-        # pdb.set_trace()
-
-        # initialize
         for m in self.subnets:
             self.init_weights(m)
             if hasattr(m,'__iter__'):

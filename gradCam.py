@@ -94,39 +94,27 @@ class GradCam:
 	# def __call__(self, index = None, features=None, scores=None):
 	def __call__(self, index = None, input_var=None, imgNo=0, ClfrNo=0):
 
+		# Getting output of model right here
 		scores, features = self.model(input_var, 0.0, p=1)
-		# score = scores[0]
+		# Choosing the classifier number 
+		scores, features = scores[ClfrNo][0], features[ClfrNo][0]
 
-		# import pdb
-		# pdb.set_trace()
-
-		# for i in scores[1:7]:
-		# 	score += i
-
-		scores, features = scores[ClfrNo][imgNo], features[ClfrNo][imgNo]
-		# scores = score[imgNo]
-
+		# Get heatmap of predicted class if none
 		if index == None:
 			index = np.argmax(scores.cpu().data.numpy())
 
+		# one_hot sets the index as 1 to get the gradients wrt that class
 		one_hot = np.zeros((1, scores.size()[-1]), dtype = np.float32)
 		one_hot[0][index] = 1
-		# import pdb
-		# pdb.set_trace()
 		one_hot = Variable(torch.from_numpy(one_hot), requires_grad = True)
 		if self.cuda:
 			one_hot = torch.sum(one_hot.cuda() * scores)
 		else:
 			one_hot = torch.sum(one_hot * scores)
 
-		
 		self.model.subnets.zero_grad()
+		# backward pass to get gradients		
 		one_hot.backward(create_graph=True)#retain_variables=True)
-
-		# import pdb
-		# pdb.set_trace()
-		
-		# print(self.model.gradients.shape)
 		grads_val = self.model.gradients[-1].cpu().data.numpy()
 
 		target = features#[-1]
@@ -135,7 +123,7 @@ class GradCam:
 		weights = np.mean(grads_val, axis = (2, 3))[0, :]
 		cam = np.zeros(target.shape[1 : ], dtype = np.float32)
 
-		# pdb.set_trace()
+		# weighted summation
 		for i, w in enumerate(weights):
 			cam += w * target[i]#, :, :]
 
