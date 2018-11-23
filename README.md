@@ -3,6 +3,9 @@
 This repository contains the code for visualizing the model proposed in the paper Multi-Scale Dense Networks
 for Resource Efficient Image Classification [link](https://arxiv.org/pdf/1703.09844.pdf). The base code here for that paper is borrowed from the wonderfully replicated work of @avirambh from [here](https://github.com/avirambh/MSDNet-GCN). Also for Grad-CAM, the basic code is taken from [here](https://github.com/leftthomas/GradCAM). Here is a more generalized version that can be used for any custom network.
 
+Also checkout my two part blog on this. [Part-1](http://siddharthasaxena.com/blog/Visualizing-MSD-Net-with-Grad-CAM-Part-1), 
+[Part-2](http://siddharthasaxena.com/blog/Visualizing-MSD-Net-with-Grad-CAM-Part-2)
+
 
 Download the trained MSD-Net models for Cifar-10 from [here](https://www.dropbox.com/s/kjxh1oaxkhtpbmw/anytime_cifar_10.pth.tar)
 
